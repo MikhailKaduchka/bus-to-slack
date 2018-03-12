@@ -1,4 +1,4 @@
-package main
+package departures
 
 // Getting departures from api.9292.nl and send them to slack by calling incoming webhook
 // Uses LOCATION_URL and SLACK_WEBHOOK variables.
@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -15,6 +16,11 @@ import (
 
 	"github.com/aws/aws-lambda-go/lambda"
 )
+
+const LOCATION_URL = "LOCATION_URL"
+const SLACK_WEBHOOK = "SLACK_WEBHOOK"
+const URL_SAMPLE = "https://api.9292.nl/0.1/locations/STOP_NAME/departure-times?lang=en-GB"
+const WEBHOOK_SAMPLE = "https://hooks.slack.com/services/TOKEN-HERE"
 
 type Request struct {
 	ID    string `json:"id"`
@@ -138,7 +144,7 @@ func getMessageTextFromLocation(location LocationDepartures) string {
 		message += "At: " + location.Tabs[0].Departures[i].Time + " To: " + location.Tabs[0].Departures[i].DestinationName + "\n"
 	}
 
-	// log.Println("Message to send: " + message)
+	log.Println("Message to send: " + message)
 	return message
 }
 
@@ -168,16 +174,26 @@ func sendToSlack(url string, message SlackMessage) {
 	}
 }
 
-func getEnv(key, fallback string) string {
+func getEnv(key, sample_value string) (string, error) {
 	if value, ok := os.LookupEnv(key); ok {
-		return value
+		return value, nil
 	}
-	return fallback
+	return "", errors.New("Env " + key + " should be set like '" + sample_value + "'")
 }
 
 func Handler(request Request) (Response, error) {
-	url := getEnv("LOCATION_URL", "https://api.9292.nl/0.1/locations/STOP_NAME/departure-times?lang=en-GB")
-	webhook := getEnv("SLACK_WEBHOOK", "https://hooks.slack.com/services/TOKEN-HERE")
+
+	url, err := getEnv(LOCATION_URL, URL_SAMPLE)
+	if err != nil {
+		log.Fatal(err)
+		os.Exit(1)
+	}
+
+	webhook, err := getEnv(SLACK_WEBHOOK, WEBHOOK_SAMPLE)
+	if err != nil {
+		log.Fatal(err)
+		os.Exit(1)
+	}
 
 	log.Println("Make a request to API...")
 	response := getDataByURL(url)
@@ -192,7 +208,7 @@ func Handler(request Request) (Response, error) {
 	sendToSlack(webhook, message)
 
 	return Response{
-		Message: fmt.Sprintf("Processed request ID %f", request.ID),
+		Message: fmt.Sprintf("Processed request ID %s", request.ID),
 		Ok:      true,
 	}, nil
 }
